@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 
+router.use('/admin', require('./admin.routes'));
+
 // Test route
 router.get('/test', (req, res) => {
     res.json({ status: true, message: 'API working fine' });
