@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 router.use('/admin', require('./admin.routes'));
+router.use('/admin', require('./user.routes'));
 
 // Test route
 router.get('/test', (req, res) => {

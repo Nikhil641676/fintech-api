@@ -1,7 +1,9 @@
 const path = require("path");
+const jwt = require("jsonwebtoken");
+
 const fs = require("fs");
-const Admin = require("../../../models/AdminModel"); // ✅ NEW MODEL
-const { hashPassword } = require("../../../utils/password");
+const Admin = require("../../../models/AdminModel"); 
+const { hashPassword,comparePassword} = require("../../../utils/password");
 const {
   adminRegisterSchema,
 } = require("../../../utils/validators/admin.validator");
@@ -179,7 +181,225 @@ const update = async (req, res) => {
   }
 };
 
+
+
+
+
+/* ======================================================
+   DELETE ADMIN
+====================================================== */
+const deleteAdmin = async (req, res) => {
+  try {
+    const { admin_id } = req.body;
+
+    if (!admin_id) {
+      return res.status(200).json({
+        status: false,
+        message: "Admin ID is required",
+      });
+    }
+
+    // Check if admin exists
+    const admin = await Admin.findById(admin_id);
+    
+    if (!admin) {
+      return res.status(200).json({
+        status: false,
+        message: "Admin not found",
+      });
+    }
+
+    // Delete profile image if exists
+    if (admin.profile_image) {
+      const imagePath = path.join(
+        __dirname,
+        "../../../public/admin/profile",
+        admin.profile_image
+      );
+      if (fs.existsSync(imagePath)) {
+        fs.unlinkSync(imagePath);
+      }
+    }
+
+    // Delete admin record
+    await Admin.delete(admin_id);
+
+    return res.status(200).json({
+      status: true,
+      message: "Admin deleted successfully",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: false,
+      message: error.message,
+    });
+  }
+};
+
+
+
+/* ======================================================
+   ADMIN LOGIN - SEND OTP
+====================================================== */
+const send_otp = async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    /* ================= VALIDATION ================= */
+    if (!username) {
+      return res.status(200).json({
+        status: false,
+        message: "Username is required",
+      });
+    }
+
+    if (!password) {
+      return res.status(200).json({
+        status: false,
+        message: "Password is required",
+      });
+    }
+
+    /* ================= FIND ADMIN ================= */
+    const admin = await Admin.findByUsername(username);
+
+    if (!admin) {
+      return res.status(200).json({
+        status: false,
+        message: "Invalid username or password",
+      });
+    }
+
+    /* ================= STATUS CHECK ================= */
+    if (admin.status !== "1") {
+      return res.status(200).json({
+        status: false,
+        message: "Admin account is inactive",
+      });
+    }
+
+    /* ================= PASSWORD CHECK ================= */
+    const isMatch = await comparePassword(password, admin.admin_password);
+
+    if (!isMatch) {
+      return res.status(200).json({
+        status: false,
+        message: "Invalid username or password",
+      });
+    }
+
+    /* ================= STATIC OTP ================= */
+    const STATIC_OTP = "123456";
+    const encryptedOtp = await hashPassword(STATIC_OTP);
+
+    // Save encrypted OTP in DB
+    await Admin.updatePassOtp(admin.admin_id, encryptedOtp);
+
+    return res.status(200).json({
+      status: true,
+      message: "OTP sent successfully",
+      otp_required: true,
+      // ⚠️ Do NOT send OTP in production
+      otp: STATIC_OTP, // remove later
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      status: false,
+      message: error.message,
+    });
+  }
+};
+
+
+
+
+/* ======================================================
+   ADMIN LOGIN - VERIFY OTP
+====================================================== */
+const verifyOtp = async (req, res) => {
+  try {
+   
+    const { username, otp } = req.body;
+
+    /* ================= VALIDATION ================= */
+    if (!username) {
+      return res.status(200).json({
+        status: false,
+        message: "Username is required",
+      });
+    }
+
+    if (!otp) {
+      return res.status(200).json({
+        status: false,
+        message: "OTP is required",
+      });
+    }
+
+    /* ================= FIND ADMIN ================= */
+    const admin = await Admin.findByUsername(username);
+    // console.log(admin);
+
+    if (!admin) {
+      return res.status(200).json({
+        status: false,
+        message: "Invalid username",
+      });
+    }
+
+    /* ================= OTP CHECK ================= */
+    const isOtpMatch = await comparePassword(otp, admin.pass_otp);
+
+    if (!isOtpMatch) {
+      return res.status(200).json({
+        status: false,
+        message: "Invalid OTP",
+      });
+    }
+
+   
+
+    /* ================= JWT TOKEN ================= */
+    const token = jwt.sign(
+      {
+        admin_id: admin.admin_id,
+        username: admin.admin_username,
+        type: admin.admin_type,
+      },
+      process.env.JWT_SECRET || "ADMIN_SECRET_KEY",
+      { expiresIn: "1d" }
+    );
+
+    return res.status(200).json({
+      status: true,
+      message: "Login successful",
+      token,
+      admin: {
+        admin_id: admin.admin_id,
+        fname: admin.admin_fname,
+        lname: admin.admin_lname,
+        username: admin.admin_username,
+        type: admin.admin_type,
+      },
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      status: false,
+      message: error.message,
+    });
+  }
+};
+
+
+
+
+
 module.exports = {
   register,
   update,
+  deleteAdmin,
+  send_otp,
+  verifyOtp
 };

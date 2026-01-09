@@ -9,3 +9,4 @@ module.exports = {
         return await bcrypt.compare(password, hash);
     }
 };
+
